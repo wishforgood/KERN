@@ -17,7 +17,7 @@ def stanford_path(fn):
 # =============================================================================
 # Update these with where your data is stored ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-VG_IMAGES = '/home/yuweihao/data/visual-genome/VGdata'
+VG_IMAGES = '/home/vision/PycharmProjects/scene-graph-TF-release/data_tools/VG/images'
 RCNN_CHECKPOINT_FN = path('faster_rcnn_500k.h5')
 
 IM_DATA_FN = stanford_path('image_data.json')
@@ -98,6 +98,8 @@ class ModelConfig(object):
         self.ggnn_rel_output_dim = None
         self.use_rel_knowledge = False
         self.rel_knowledge = None
+
+        self.use_global_only_gnn = False
 
         self.tb_log_dir = None
         self.save_rel_recall = None
@@ -205,6 +207,8 @@ class ModelConfig(object):
         parser.add_argument('-ggnn_rel_output_dim', dest='ggnn_rel_output_dim', help='node output feature dimension of GGNN_rel', type=int, default=512)
         parser.add_argument('-use_rel_knowledge', dest='use_rel_knowledge', help='use cooccurrence knowledge of object pairs and relationships', action='store_true')
         parser.add_argument('-rel_knowledge', dest='rel_knowledge', help='Filename to load matrix of cooccurrence knowledge of object pairs and relationships', type=str, default='')
+
+        parser.add_argument('-use_global_only_gnn', dest='use_global_only_gnn', help='use GOGNN module', action='store_true', default=False)
 
 
         parser.add_argument('-tb_log_dir', dest='tb_log_dir', help='dir to save tensorboard summaries', type=str, default='')

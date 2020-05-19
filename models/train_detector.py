@@ -1,7 +1,6 @@
 """
-Training script 4 Detection # wrote by rowanz
+Training script 4 Detection
 """
-from dataloaders.mscoco import CocoDetection, CocoDataLoader
 from dataloaders.visual_genome import VGDataLoader, VG
 from lib.object_detector import ObjectDetector
 import numpy as np
@@ -10,28 +9,20 @@ import torch
 import pandas as pd
 import time
 import os
+from pycocotools.cocoeval import COCOeval
 from config import ModelConfig, FG_FRACTION, RPN_FG_FRACTION, IM_SCALE, BOX_SCALE
 from torch.nn import functional as F
 from lib.fpn.box_utils import bbox_loss
 import torch.backends.cudnn as cudnn
-from pycocotools.cocoeval import COCOeval
 from lib.pytorch_misc import optimistic_restore, clip_grad_norm
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
+print(torch.cuda.get_device_name(0))
 cudnn.benchmark = True
 conf = ModelConfig()
 
-if conf.coco:
-    train, val = CocoDetection.splits()
-    val.ids = val.ids[:conf.val_size]
-    train.ids = train.ids
-    train_loader, val_loader = CocoDataLoader.splits(train, val, batch_size=conf.batch_size,
-                                                     num_workers=conf.num_workers,
-                                                     num_gpus=conf.num_gpus)
-else:
-    train, val, _ = VG.splits(num_val_im=conf.val_size, filter_non_overlap=False,
+train, val, _ = VG.splits(num_val_im=conf.val_size, filter_non_overlap=False,
                               filter_empty_rels=False, use_proposals=conf.use_proposals)
-    train_loader, val_loader = VGDataLoader.splits(train, val, batch_size=conf.batch_size,
+train_loader, val_loader = VGDataLoader.splits(train, val, batch_size=conf.batch_size,
                                                    num_workers=conf.num_workers,
                                                    num_gpus=conf.num_gpus)
 
@@ -190,16 +181,9 @@ def val_batch(batch_num, b):
     boxes_np = result.boxes_assigned.data.cpu().numpy()
     im_inds_np = result.im_inds.data.cpu().numpy()
     im_scales = b.im_sizes.reshape((-1, 3))[:, 2]
-    if conf.coco:
-        boxes_np /= im_scales[im_inds_np][:, None]
-        boxes_np[:, 2:4] = boxes_np[:, 2:4] - boxes_np[:, 0:2] + 1
-        cls_preds_np[:] = [val.ind_to_id[c_ind] for c_ind in cls_preds_np]
-        im_inds_np[:] = [val.ids[im_ind + batch_num * conf.batch_size * conf.num_gpus]
-                         for im_ind in im_inds_np]
-    else:
-        boxes_np *= BOX_SCALE / IM_SCALE
-        boxes_np[:, 2:4] = boxes_np[:, 2:4] - boxes_np[:, 0:2] + 1
-        im_inds_np += batch_num * conf.batch_size * conf.num_gpus
+    boxes_np *= BOX_SCALE / IM_SCALE
+    boxes_np[:, 2:4] = boxes_np[:, 2:4] - boxes_np[:, 0:2] + 1
+    im_inds_np += batch_num * conf.batch_size * conf.num_gpus
 
     return np.column_stack((im_inds_np, boxes_np, scores_np, cls_preds_np))
 
@@ -215,4 +199,4 @@ for epoch in range(start_epoch + 1, start_epoch + 1 + conf.num_epochs):
         'epoch': epoch,
         'state_dict': detector.state_dict(),
         'optimizer': optimizer.state_dict(),
-    }, os.path.join(conf.save_dir, '{}-{}.tar'.format('coco' if conf.coco else 'vg', epoch)))
+    }, os.path.join(conf.save_dir, '{}-{}.tar'.format('vg', epoch)))

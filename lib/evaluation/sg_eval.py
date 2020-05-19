@@ -2,6 +2,8 @@
 Adapted from Danfei Xu. In particular, slow code was removed
 """
 import numpy as np
+import math
+import pickle
 from functools import reduce
 from lib.pytorch_misc import intersect_2d, argsort_desc
 from lib.fpn.box_intersections_cpu.bbox import bbox_overlaps
@@ -35,9 +37,16 @@ class BasicSceneGraphEvaluator:
         np.save(fn, self.result_dict)
 
     def print_stats(self):
-        print('======================' + self.mode + '============================')
+        if self.multiple_preds:
+            recall_method = 'recall without constraint'
+        else:
+            recall_method = 'recall with constraint'
+        output = {}
+        print('======================' + self.mode + '  ' + recall_method + '============================')
         for k, v in self.result_dict[self.mode + '_recall'].items():
             print('R@%i: %f' % (k, np.mean(v)))
+            output['R@%i' % k] = np.mean(v)
+        return output
 
 
 def evaluate_from_dict(gt_entry, pred_entry, mode, result_dict, multiple_preds=False,
@@ -47,10 +56,10 @@ def evaluate_from_dict(gt_entry, pred_entry, mode, result_dict, multiple_preds=F
     :param gt_entry: Dictionary containing gt_relations, gt_boxes, gt_classes
     :param pred_entry: Dictionary containing pred_rels, pred_boxes (if detection), pred_classes
     :param mode: 'det' or 'cls'
-    :param result_dict: 
-    :param viz_dict: 
-    :param kwargs: 
-    :return: 
+    :param result_dict:
+    :param viz_dict:
+    :param kwargs:
+    :return:
     """
     gt_rels = gt_entry['gt_relations']
     gt_boxes = gt_entry['gt_boxes'].astype(float)
@@ -245,12 +254,12 @@ def _compute_pred_matches(gt_triplets, pred_triplets,
     """
     Given a set of predicted triplets, return the list of matching GT's for each of the
     given predictions
-    :param gt_triplets: 
-    :param pred_triplets: 
-    :param gt_boxes: 
-    :param pred_boxes: 
-    :param iou_thresh: 
-    :return: 
+    :param gt_triplets:
+    :param pred_triplets:
+    :param gt_boxes:
+    :param pred_boxes:
+    :param iou_thresh:
+    :return:
     """
     # This performs a matrix multiplication-esque thing between the two arrays
     # Instead of summing, we want the equality, so we reduce in that way
@@ -282,3 +291,86 @@ def _compute_pred_matches(gt_triplets, pred_triplets,
         for i in np.where(keep_inds)[0][inds]:
             pred_to_gt[i].append(int(gt_ind))
     return pred_to_gt
+
+
+
+
+
+
+
+def calculate_mR_from_evaluator_list(evaluator_list, mode, multiple_preds=False, save_file=None):
+    all_rel_results = {}
+    for (pred_id, pred_name, evaluator_rel) in evaluator_list:
+        print('\n')
+        print('relationship: ', pred_name)
+        rel_results = evaluator_rel[mode].print_stats()
+        all_rel_results[pred_name] = rel_results
+
+    mean_recall = {}
+    mR20 = 0.0
+    mR50 = 0.0
+    mR100 = 0.0
+    for key, value in all_rel_results.items():
+        if math.isnan(value['R@100']):
+            continue
+        mR20 += value['R@20']
+        mR50 += value['R@50']
+        mR100 += value['R@100']
+    rel_num = len(evaluator_list)
+    mR20 /= rel_num
+    mR50 /= rel_num
+    mR100 /= rel_num
+    mean_recall['R@20'] = mR20
+    mean_recall['R@50'] = mR50
+    mean_recall['R@100'] = mR100
+    all_rel_results['mean_recall'] = mean_recall
+
+
+    if multiple_preds:
+        recall_mode = 'mean recall without constraint'
+    else:
+        recall_mode = 'mean recall with constraint'
+    print('\n')
+    print('======================' + mode + '  ' + recall_mode + '============================')
+    print('mR@20: ', mR20)
+    print('mR@50: ', mR50)
+    print('mR@100: ', mR100)
+
+    if save_file is not None:
+        if multiple_preds:
+            save_file = save_file.replace('.pkl', '_multiple_preds.pkl')
+        with open(save_file, 'wb') as f:
+            pickle.dump(all_rel_results, f)
+
+    return mean_recall
+
+
+
+
+
+def eval_entry(mode, gt_entry, pred_entry, evaluator, evaluator_multiple_preds, evaluator_list, evaluator_multiple_preds_list):
+    evaluator[mode].evaluate_scene_graph_entry(
+        gt_entry,
+        pred_entry,
+    )
+
+    evaluator_multiple_preds[mode].evaluate_scene_graph_entry(
+        gt_entry,
+        pred_entry,
+    )
+
+    for (pred_id, _, evaluator_rel), (_, _, evaluator_rel_mp) in zip(evaluator_list, evaluator_multiple_preds_list):
+        gt_entry_rel = gt_entry.copy()
+        mask = np.in1d(gt_entry_rel['gt_relations'][:, -1], pred_id)
+        gt_entry_rel['gt_relations'] = gt_entry_rel['gt_relations'][mask, :]
+        if gt_entry_rel['gt_relations'].shape[0] == 0:
+            continue
+
+        evaluator_rel[mode].evaluate_scene_graph_entry(
+                gt_entry_rel,
+                pred_entry,
+        )
+        evaluator_rel_mp[mode].evaluate_scene_graph_entry(
+                gt_entry_rel,
+                pred_entry,
+        )

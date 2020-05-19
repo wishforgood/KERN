@@ -52,7 +52,7 @@ detector = KERN(classes=train.ind_to_classes, rel_classes=train.ind_to_predicate
                 use_obj_knowledge=conf.use_obj_knowledge, obj_knowledge=conf.obj_knowledge,
                 use_ggnn_rel=conf.use_ggnn_rel, ggnn_rel_time_step_num=conf.ggnn_rel_time_step_num,
                 ggnn_rel_hidden_dim=conf.ggnn_rel_hidden_dim, ggnn_rel_output_dim=conf.ggnn_rel_output_dim,
-                use_rel_knowledge=conf.use_rel_knowledge, rel_knowledge=conf.rel_knowledge)
+                use_rel_knowledge=conf.use_rel_knowledge, rel_knowledge=conf.rel_knowledge, use_global_only_gnn=conf.use_global_only_gnn)
 
 # Freeze the detector
 for n, param in detector.detector.named_parameters():
@@ -144,7 +144,7 @@ def train_batch(b, verbose=False):
     result = detector[b]
 
     losses = {}
-    if conf.use_ggnn_obj: # if not use ggnn obj, we just use scores of faster rcnn as their scores, there is no need to train
+    if conf.use_ggnn_obj or conf.use_global_only_gnn: # if not use ggnn obj, we just use scores of faster rcnn as their scores, there is no need to train
         losses['class_loss'] = F.cross_entropy(result.rm_obj_dists, result.rm_obj_labels)
     losses['rel_loss'] = F.cross_entropy(result.rel_dists, result.rel_labels[:, -1])
     loss = sum(losses.values())
@@ -160,7 +160,7 @@ def train_batch(b, verbose=False):
     return res
 
 
-def val_epoch():
+def val_epoch(mode=conf.mode):
     detector.eval()
     evaluator_list = [] # for calculating recall of each relationship except no relationship
     evaluator_multiple_preds_list = []
@@ -174,11 +174,11 @@ def val_epoch():
     for val_b, batch in enumerate(val_loader):
         val_batch(conf.num_gpus * val_b, batch, evaluator, evaluator_multiple_preds, evaluator_list, evaluator_multiple_preds_list)
 
-    recall = evaluator[conf.mode].print_stats()
-    recall_mp = evaluator_multiple_preds[conf.mode].print_stats()
+    recall = evaluator[mode].print_stats()
+    recall_mp = evaluator_multiple_preds[mode].print_stats()
     
-    mean_recall = calculate_mR_from_evaluator_list(evaluator_list, conf.mode)
-    mean_recall_mp = calculate_mR_from_evaluator_list(evaluator_multiple_preds_list, conf.mode, multiple_preds=True)
+    mean_recall = calculate_mR_from_evaluator_list(evaluator_list, mode)
+    mean_recall_mp = calculate_mR_from_evaluator_list(evaluator_multiple_preds_list, mode, multiple_preds=True)
 
     return recall, recall_mp, mean_recall, mean_recall_mp
 
@@ -216,8 +216,9 @@ for epoch in range(start_epoch + 1, start_epoch + 1 + conf.num_epochs):
 
     if use_tb:
         writer.add_scalar('loss/rel_loss', rez.mean(1)['rel_loss'], epoch)
-        if conf.use_ggnn_obj:
+        if conf.use_ggnn_obj or conf.use_global_only_gnn:
             writer.add_scalar('loss/class_loss', rez.mean(1)['class_loss'], epoch)
+            
         writer.add_scalar('loss/total', rez.mean(1)['total'], epoch)
 
     if conf.save_dir is not None:
@@ -227,7 +228,7 @@ for epoch in range(start_epoch + 1, start_epoch + 1 + conf.num_epochs):
             # 'optimizer': optimizer.state_dict(),
         }, os.path.join(conf.save_dir, '{}-{}.tar'.format('vgrel', epoch)))
 
-    recall, recall_mp, mean_recall, mean_recall_mp = val_epoch()
+    recall, recall_mp, mean_recall, mean_recall_mp = val_epoch(mode=conf.mode)
     if use_tb:
         for key, value in recall.items():
             writer.add_scalar('eval_' + conf.mode + '_with_constraint/' + key, value, epoch)

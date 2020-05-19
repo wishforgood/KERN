@@ -16,4 +16,6 @@ python models/eval_rels.py -m sgcls -p 100 -clip 5 \
 -use_rel_knowledge \
 -rel_knowledge prior_matrices/rel_matrix.npy \
 -cache caches/kern_sgcls.pkl \
+
+
 -save_rel_recall results/kern_rel_recall_sgcls.pkl

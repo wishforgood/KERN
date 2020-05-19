@@ -43,7 +43,6 @@ class UnionBoxesAndFeats(Module):
         union_pools = union_boxes(fmap, rois, union_inds, pooling_size=self.pooling_size, stride=self.stride)
         if not self.use_feats:
             return union_pools.detach()
-
         pair_rois = torch.cat((rois[:, 1:][union_inds[:, 0]], rois[:, 1:][union_inds[:, 1]]),1).data.cpu().numpy()
         # rects_np = get_rect_features(pair_rois, self.pooling_size*2-1) - 0.5
         rects_np = draw_union_boxes(pair_rois, self.pooling_size*4-1) - 0.5
@@ -86,7 +85,6 @@ def union_boxes(fmap, rois, union_inds, pooling_size=14, stride=16):
         torch.min(rois[:, 1:3][union_inds[:, 0]], rois[:, 1:3][union_inds[:, 1]]),
         torch.max(rois[:, 3:5][union_inds[:, 0]], rois[:, 3:5][union_inds[:, 1]]),
     ),1)
-
     # (num_rois, d, pooling_size, pooling_size)
     union_pools = RoIAlignFunction(pooling_size, pooling_size,
                                    spatial_scale=1/stride)(fmap, union_rois)

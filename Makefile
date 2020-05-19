@@ -1,4 +1,6 @@
-export PATH := /home/yuweihao/cuda-9.0/bin:$(PATH)
+export PATH := /usr/local/cuda-9.0/bin:$(PATH)
+export LD_LIBRARY_PATH := /usr/local/cuda-9.0/lib64:$(LD_LIBRARY_PATH)
+export CUDA_VISIBLE_DEVICES := 0
 
 all: draw_rectangles box_intersections nms roi_align
 

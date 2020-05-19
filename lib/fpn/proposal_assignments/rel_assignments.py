@@ -11,6 +11,7 @@ from lib.pytorch_misc import to_variable, nonintersecting_2d_inds
 from collections import defaultdict
 import torch
 
+
 @to_variable
 def rel_assignments(im_inds, rpn_rois, roi_gtlabels, gt_boxes, gt_classes, gt_rels, image_offset,
                     fg_thresh=0.5, num_sample_per_gt=4, filter_non_overlap=True):
@@ -40,7 +41,7 @@ def rel_assignments(im_inds, rpn_rois, roi_gtlabels, gt_boxes, gt_classes, gt_re
     gt_classes_np[:, 0] -= image_offset
     gt_rels_np[:, 0] -= image_offset
 
-    num_im = gt_classes_np[:, 0].max()+1
+    num_im = gt_classes_np[:, 0].max() + 1
 
     # print("Pred inds {} pred boxes {} pred box labels {} gt classes {} gt rels {}".format(
     #     pred_inds_np, pred_boxes_np, pred_boxlabels_np, gt_classes_np, gt_rels_np
@@ -50,7 +51,6 @@ def rel_assignments(im_inds, rpn_rois, roi_gtlabels, gt_boxes, gt_classes, gt_re
     num_box_seen = 0
     for im_ind in range(num_im):
         pred_ind = np.where(pred_inds_np == im_ind)[0]
-
         gt_ind = np.where(gt_classes_np[:, 0] == im_ind)[0]
         gt_boxes_i = gt_boxes_np[gt_ind]
         gt_classes_i = gt_classes_np[gt_ind, 1]
@@ -61,7 +61,7 @@ def rel_assignments(im_inds, rpn_rois, roi_gtlabels, gt_boxes, gt_classes, gt_re
         pred_boxlabels_i = pred_boxlabels_np[pred_ind]
 
         ious = bbox_overlaps(pred_boxes_i, gt_boxes_i)
-        is_match = (pred_boxlabels_i[:,None] == gt_classes_i[None]) & (ious >= fg_thresh)
+        is_match = (pred_boxlabels_i[:, None] == gt_classes_i[None]) & (ious >= fg_thresh)
 
         # FOR BG. Limit ourselves to only IOUs that overlap, but are not the exact same box
         pbi_iou = bbox_overlaps(pred_boxes_i, pred_boxes_i)
@@ -119,7 +119,7 @@ def rel_assignments(im_inds, rpn_rois, roi_gtlabels, gt_boxes, gt_classes, gt_re
             # p /= p.sum()
             bg_rels = bg_rels[
                 np.random.choice(bg_rels.shape[0],
-                                 #p=p,
+                                 # p=p,
                                  size=num_bg_rel, replace=False)]
         else:
             bg_rels = np.zeros((0, 3), dtype=np.int64)
@@ -130,12 +130,11 @@ def rel_assignments(im_inds, rpn_rois, roi_gtlabels, gt_boxes, gt_classes, gt_re
 
         # print("GTR {} -> AR {} vs {}".format(gt_rels.shape, fg_rels.shape, bg_rels.shape))
         all_rels_i = np.concatenate((fg_rels, bg_rels), 0)
-        all_rels_i[:,0:2] += num_box_seen
-
-        all_rels_i = all_rels_i[np.lexsort((all_rels_i[:,1], all_rels_i[:,0]))]
+        all_rels_i[:, 0:2] += num_box_seen
+        all_rels_i = all_rels_i[np.lexsort((all_rels_i[:, 1], all_rels_i[:, 0]))]
 
         rel_labels.append(np.column_stack((
-            im_ind*np.ones(all_rels_i.shape[0], dtype=np.int64),
+            im_ind * np.ones(all_rels_i.shape[0], dtype=np.int64),
             all_rels_i,
         )))
 
@@ -143,3 +142,41 @@ def rel_assignments(im_inds, rpn_rois, roi_gtlabels, gt_boxes, gt_classes, gt_re
     rel_labels = torch.LongTensor(np.concatenate(rel_labels, 0)).cuda(rpn_rois.get_device(),
                                                                       async=True)
     return rel_labels
+
+@to_variable
+def full_rel_assignments(im_inds, rpn_rois, gt_classes):
+    pred_inds_np = im_inds.cpu().numpy()
+    gt_classes_np = gt_classes.cpu().numpy()
+    num_im = gt_classes_np[:, 0].max() + 1
+    img_obj_num = []
+    rel_labels = []
+    num_box_seen = 0
+    all_rels_i = []
+    for im_ind in range(num_im):
+        pred_ind = np.where(pred_inds_np == im_ind)[0]
+        img_obj_num.append(len(pred_ind))
+        img_rels_i = []
+        for from_node_ind in pred_ind:
+            for to_node_ind in pred_ind:
+                img_rels_i.append((from_node_ind, to_node_ind, 0))
+        # print("GTR {} -> AR {} vs {}".format(gt_rels.shape, fg_rels.shape, bg_rels.shape)
+        img_rels_i = np.array(img_rels_i, dtype=np.int64)
+        rel_labels.append(np.column_stack((
+            im_ind * np.ones(img_rels_i.shape[0], dtype=np.int64),
+            img_rels_i,
+        )))
+    rel_labels = torch.LongTensor(np.concatenate(rel_labels, 0)).cuda(rpn_rois.get_device(),
+                                                                      async=True)
+    return rel_labels
+
+
+def full_rel_num(im_inds, rpn_rois, gt_classes):
+    pred_inds_np = im_inds.cpu().numpy()
+    gt_classes_np = gt_classes.cpu().numpy()
+    num_im = gt_classes_np[:, 0].max() + 1
+    img_obj_num = []
+    for im_ind in range(num_im):
+        pred_ind = np.where(pred_inds_np == im_ind)[0]
+        img_obj_num.append(len(pred_ind))
+
+    return img_obj_num
