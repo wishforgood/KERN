@@ -175,9 +175,10 @@ class GGNNRelReason(nn.Module):
         self.num_rel_cls = num_rel_cls
         self.obj_dim = obj_dim
         self.rel_dim = rel_dim
-        self.obj_proj = nn.Linear(hidden_dim, hidden_dim)
-        self.rel_proj = nn.Linear(hidden_dim * 2, hidden_dim)
-
+        # self.obj_proj = nn.Linear(hidden_dim, hidden_dim)
+        # self.rel_proj = nn.Linear(hidden_dim * 2, hidden_dim)
+        self.obj_proj = nn.Linear(obj_dim, hidden_dim)
+        self.rel_proj = nn.Linear(rel_dim, hidden_dim)
         self.ggnn_rel = GGNNRel(num_rel_cls=num_rel_cls, time_step_num=time_step_num, hidden_dim=hidden_dim,
                                 output_dim=output_dim, use_knowledge=use_knowledge, prior_matrix=knowledge_matrix)
 
@@ -535,9 +536,10 @@ class KERN(nn.Module):
                 boxes_per_cls=result.boxes_all
             )
         if self.use_global_only_gnn:
-            result.rm_obj_dists, result.obj_fmap, global_features = self.global_only_gnn(im_inds, result.obj_fmap, pair_features,
+            result.rm_obj_dists, _, global_features = self.global_only_gnn(im_inds, result.obj_fmap, pair_features,
                                                                            result.rm_obj_labels if self.training or self.mode == 'predcls' else None)
-            vr = self.pair_rep(result.obj_fmap.detach(), rel_inds[:, 1:])
+            # vr = self.pair_rep(result.obj_fmap.detach(), rel_inds[:, 1:])
+            vr = self.visual_rep(result.fmap.detach(), rois, rel_inds[:, 1:])
             result.rm_obj_dists, result.obj_preds, result.rel_dists = self.ggnn_rel_reason(
                 obj_fmaps=result.obj_fmap,
                 obj_logits=result.rm_obj_dists,

@@ -41,6 +41,11 @@ class GOGNN(nn.Module):
         self.fc_output_obj = nn.Linear(2 * hidden_dim, output_dim)
         self.ReLU = nn.ReLU(True)
         self.fc_obj_cls = nn.Linear(output_dim, self.num_obj_cls)
+        self.pair_hidden_trans = nn.Linear(2 * hidden_dim, hidden_dim)
+        self.subject_trans = nn.Linear(hidden_dim, hidden_dim)
+        self.object_trans = nn.Linear(hidden_dim, hidden_dim)
+        self.object_trans = nn.Linear(hidden_dim, hidden_dim)
+        self.edge_att_trans = nn.Linear(hidden_dim, 1)
 
     def forward(self, input_ggnn, pair_features):
         # print(input_ggnn)
@@ -56,6 +61,11 @@ class GOGNN(nn.Module):
 
         global_feature = self.global_proj(torch.mean(hidden, 0))
 
+        source_hidden = hidden.detach()
+        for i in range(num_object):
+            for j in range(num_object):
+                if i != j:
+                    self.matrix[i,j] = self.edge_att_trans(self.subject_trans(source_hidden[i]) * self.object_trans(source_hidden[j]) * self.pair_hidden_trans(torch.cat([source_hidden[i], source_hidden[j]], 0)))
         for t in range(self.time_step_num):
 
             # eq(2)
