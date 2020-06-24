@@ -7,9 +7,9 @@ from torch.autograd import Variable
 import numpy as np
 
 
-class GOGNN(nn.Module):
+class GSNN(nn.Module):
     def __init__(self, num_obj_cls=151, num_rel_cls=51, time_step_num=3, hidden_dim=512, output_dim=512):
-        super(GOGNN, self).__init__()
+        super(GSNN, self).__init__()
         self.num_rel_cls = num_rel_cls
         self.num_obj_cls = num_obj_cls
         self.time_step_num = time_step_num
@@ -61,11 +61,96 @@ class GOGNN(nn.Module):
 
         global_feature = self.global_proj(torch.mean(hidden, 0))
 
-        source_hidden = hidden.detach()
+        source_hidden = hidden
         for i in range(num_object):
             for j in range(num_object):
                 if i != j:
                     self.matrix[i,j] = self.edge_att_trans(self.subject_trans(source_hidden[i]) * self.object_trans(source_hidden[j]) * self.pair_hidden_trans(torch.cat([source_hidden[i], source_hidden[j]], 0)))
+        for t in range(self.time_step_num):
+
+            # eq(2)
+            # here we use some matrix operation skills
+            av = torch.cat([torch.cat([self.matrix @ hidden], 0), global_feature.repeat(self.matrix.size(0), 1)], 1)
+
+            # eq(3)
+            # hidden = hidden.view(num_object*self.num_obj_cls, -1)
+            zv = torch.sigmoid(self.fc_eq3_w(av) + self.fc_eq3_u(hidden))
+
+            # eq(4)
+            rv = torch.sigmoid(self.fc_eq4_w(av) + self.fc_eq3_u(hidden))
+
+            # eq(5)
+            hv = torch.tanh(self.fc_eq5_w(av) + self.fc_eq5_u(rv * hidden))
+
+            hidden = (1 - zv) * hidden + zv * hv
+            # hidden = hidden.view(num_object, self.num_obj_cls, -1)
+
+            v_bar = torch.mean(hidden, 0)
+
+            zu = torch.sigmoid(self.fc_eq6_w(v_bar) + self.fc_eq6_u(global_feature))
+
+            ru = torch.sigmoid(self.fc_eq7_w(v_bar) + self.fc_eq6_u(global_feature))
+
+            hu = torch.tanh(self.fc_eq8_w(v_bar) + self.fc_eq8_u(ru * global_feature))
+
+            global_feature = (1 - zu) * global_feature + zu * hu
+
+        output_obj = torch.cat((hidden, input_ggnn), 1)
+        output_obj = self.fc_output_obj(output_obj)
+        output_obj = self.ReLU(output_obj)
+        obj_dists = self.fc_obj_cls(output_obj.view(-1, self.output_dim))
+        return obj_dists, output_obj, global_feature
+
+class GOGNN(nn.Module):
+    def __init__(self, num_obj_cls=151, num_rel_cls=51, time_step_num=3, hidden_dim=512, output_dim=512):
+        super(GOGNN, self).__init__()
+        self.num_rel_cls = num_rel_cls
+        self.num_obj_cls = num_obj_cls
+        self.time_step_num = time_step_num
+        self.output_dim = output_dim
+
+        # if you want to use multi gpu to run this model, then you need to use the following line code to replace the last line code.
+        # And if you use this line code, the model will save prior matrix as parameters in saved models.
+        # self.matrix = nn.Parameter(torch.from_numpy(matrix_np), requires_grad=False)
+
+        # here we follow the paper "Gated graph sequence neural networks" to implement GGNN, so eq3 means equation 3 in this paper.
+        self.fc_node_trans_a = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_node_trans_b = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq3_w = nn.Linear(2 * hidden_dim, hidden_dim)
+        self.fc_eq3_u = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq4_w = nn.Linear(2 * hidden_dim, hidden_dim)
+        self.fc_eq4_u = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq5_w = nn.Linear(2 * hidden_dim, hidden_dim)
+        self.fc_eq5_u = nn.Linear(hidden_dim, hidden_dim)
+
+        self.fc_eq6_w = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq6_u = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq7_w = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq7_u = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq8_w = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq8_u = nn.Linear(hidden_dim, hidden_dim)
+
+        self.global_proj = nn.Linear(hidden_dim, hidden_dim)
+
+        self.fc_output_obj = nn.Linear(2 * hidden_dim, output_dim)
+        self.ReLU = nn.ReLU(True)
+        self.fc_obj_cls = nn.Linear(output_dim, self.num_obj_cls)
+
+    def forward(self, input_ggnn):
+        # print(input_ggnn)
+        # print(pair_features)
+        # propogation process
+        num_object = input_ggnn.size()[0]
+
+        hidden = input_ggnn
+
+        matrix_np = np.ones((num_object, num_object)).astype(np.float32) / num_object
+
+        self.matrix = Variable(torch.from_numpy(matrix_np), requires_grad=False).cuda()
+
+        global_feature = self.global_proj(torch.mean(hidden, 0))
+
+        source_hidden = hidden
         for t in range(self.time_step_num):
 
             # eq(2)
