@@ -100,6 +100,7 @@ class ModelConfig(object):
         self.rel_knowledge = None
 
         self.use_global_only_gnn = False
+        self.use_gsnn=False
 
         self.tb_log_dir = None
         self.save_rel_recall = None
@@ -209,6 +210,7 @@ class ModelConfig(object):
         parser.add_argument('-rel_knowledge', dest='rel_knowledge', help='Filename to load matrix of cooccurrence knowledge of object pairs and relationships', type=str, default='')
 
         parser.add_argument('-use_global_only_gnn', dest='use_global_only_gnn', help='use GOGNN module', action='store_true', default=False)
+        parser.add_argument('-use_gsnn', dest='use_gsnn', help='use GSNN module', action='store_true', default=False)
 
 
         parser.add_argument('-tb_log_dir', dest='tb_log_dir', help='dir to save tensorboard summaries', type=str, default='')
