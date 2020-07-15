@@ -52,7 +52,7 @@ detector = KERN(classes=train.ind_to_classes, rel_classes=train.ind_to_predicate
                 use_obj_knowledge=conf.use_obj_knowledge, obj_knowledge=conf.obj_knowledge,
                 use_ggnn_rel=conf.use_ggnn_rel, ggnn_rel_time_step_num=conf.ggnn_rel_time_step_num,
                 ggnn_rel_hidden_dim=conf.ggnn_rel_hidden_dim, ggnn_rel_output_dim=conf.ggnn_rel_output_dim,
-                use_rel_knowledge=conf.use_rel_knowledge, rel_knowledge=conf.rel_knowledge, use_global_only_gnn=conf.use_global_only_gnn)
+                use_rel_knowledge=conf.use_rel_knowledge, rel_knowledge=conf.rel_knowledge, use_global_only_gnn=conf.use_global_only_gnn, use_gsnn=conf.use_gsnn)
 
 # Freeze the detector
 for n, param in detector.detector.named_parameters():
@@ -144,7 +144,7 @@ def train_batch(b, verbose=False):
     result = detector[b]
 
     losses = {}
-    if conf.use_ggnn_obj or conf.use_global_only_gnn: # if not use ggnn obj, we just use scores of faster rcnn as their scores, there is no need to train
+    if conf.use_ggnn_obj or conf.use_global_only_gnn or conf.use_gsnn: # if not use ggnn obj, we just use scores of faster rcnn as their scores, there is no need to train
         losses['class_loss'] = F.cross_entropy(result.rm_obj_dists, result.rm_obj_labels)
     losses['rel_loss'] = F.cross_entropy(result.rel_dists, result.rel_labels[:, -1])
     loss = sum(losses.values())
@@ -216,7 +216,7 @@ for epoch in range(start_epoch + 1, start_epoch + 1 + conf.num_epochs):
 
     if use_tb:
         writer.add_scalar('loss/rel_loss', rez.mean(1)['rel_loss'], epoch)
-        if conf.use_ggnn_obj or conf.use_global_only_gnn:
+        if conf.use_ggnn_obj or conf.use_global_only_gnn or conf.use_gsnn:
             writer.add_scalar('loss/class_loss', rez.mean(1)['class_loss'], epoch)
             
         writer.add_scalar('loss/total', rez.mean(1)['total'], epoch)
