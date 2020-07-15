@@ -40,14 +40,14 @@ class GSNNReason(nn.Module):
         self.num_obj_cls = num_obj_cls
         self.obj_proj = nn.Linear(obj_dim, hidden_dim)
         self.global_only_gnn = GSNN(num_obj_cls=num_obj_cls, time_step_num=time_step_num, hidden_dim=hidden_dim,
-                                     output_dim=output_dim)
+                                    output_dim=output_dim)
         if self.mode == 'predcls':
             for p in self.global_only_gnn.parameters():
                 p.requires_grad = False
             for p in self.obj_proj.parameters():
                 p.requires_grad = False
 
-    def forward(self, im_inds, obj_fmaps, pair_features, obj_labels):
+    def forward(self, im_inds, obj_fmaps, node_confidence, obj_labels):
         """
         Reason object classes using knowledge of object cooccurrence
         """
@@ -67,7 +67,7 @@ class GSNNReason(nn.Module):
             obj_cum_add = np.cumsum([0] + lengths)
             pair_cum_add = np.cumsum([0] + pair_lengths)
             obj_feature_dists = list(zip(*[self.global_only_gnn(input_ggnn[obj_cum_add[i]: obj_cum_add[i + 1]],
-                                                                pair_features[pair_cum_add[i]: pair_cum_add[i + 1]]) for
+                                                                node_confidence[obj_cum_add[i]: obj_cum_add[i + 1]]) for
                                            i
                                            in
                                            range(len(lengths))]))
@@ -98,7 +98,7 @@ class GOGNNReason(nn.Module):
             for p in self.obj_proj.parameters():
                 p.requires_grad = False
 
-    def forward(self, im_inds, obj_fmaps, pair_features, obj_labels):
+    def forward(self, im_inds, obj_fmaps, obj_labels):
         """
         Reason object classes using knowledge of object cooccurrence
         """
@@ -117,8 +117,7 @@ class GOGNNReason(nn.Module):
                 pair_lengths.append(l * (l - 1))
             obj_cum_add = np.cumsum([0] + lengths)
             pair_cum_add = np.cumsum([0] + pair_lengths)
-            obj_feature_dists = list(zip(*[self.global_only_gnn(input_ggnn[obj_cum_add[i]: obj_cum_add[i + 1]],
-                                                                pair_features[pair_cum_add[i]: pair_cum_add[i + 1]]) for
+            obj_feature_dists = list(zip(*[self.global_only_gnn(input_ggnn[obj_cum_add[i]: obj_cum_add[i + 1]]) for
                                            i
                                            in
                                            range(len(lengths))]))
@@ -377,7 +376,7 @@ class KERN(nn.Module):
         self.use_ggnn_obj = use_ggnn_obj
         self.use_ggnn_rel = use_ggnn_rel
         self.use_global_only_gnn = use_global_only_gnn
-        self.use_gsnn=use_gsnn
+        self.use_gsnn = use_gsnn
 
         self.require_overlap = require_overlap_det and self.mode == 'sgdet'
 
@@ -459,12 +458,13 @@ class KERN(nn.Module):
             #         p.requires_grad = False
             #     for p in self.roi_fmap.parameters():
             #         p.requires_grad = False
+            self.obj_score_cal = nn.Softmax(dim=1)
             self.gsnn = GSNNReason(mode=self.mode,
-                                               num_obj_cls=len(self.classes),
-                                               obj_dim=self.obj_dim,
-                                               time_step_num=ggnn_obj_time_step_num,
-                                               hidden_dim=ggnn_obj_hidden_dim,
-                                               output_dim=ggnn_obj_output_dim)
+                                   num_obj_cls=len(self.classes),
+                                   obj_dim=self.obj_dim,
+                                   time_step_num=ggnn_obj_time_step_num,
+                                   hidden_dim=ggnn_obj_hidden_dim,
+                                   output_dim=ggnn_obj_output_dim)
             self.ggnn_rel_reason = GGNNRelReason(mode=self.mode,
                                                  num_obj_cls=len(self.classes),
                                                  num_rel_cls=len(rel_classes),
@@ -501,7 +501,8 @@ class KERN(nn.Module):
         return self.roi_fmap(uboxes)
 
     def pair_rep(self, features, pair_inds):
-        return torch.stack([torch.cat((features[pair_ind[0]], features[pair_ind[1]])) for index, pair_ind in enumerate(pair_inds)])
+        return torch.stack(
+            [torch.cat((features[pair_ind[0]], features[pair_ind[1]])) for index, pair_ind in enumerate(pair_inds)])
 
     def get_rel_inds(self, rel_labels, im_inds, box_priors):
         # Get the relationship candidates
@@ -615,7 +616,7 @@ class KERN(nn.Module):
             )
         if self.use_global_only_gnn:
             result.rm_obj_dists = self.global_only_gnn(im_inds, result.obj_fmap,
-                                                                           result.rm_obj_labels if self.training or self.mode == 'predcls' else None)
+                                                       result.rm_obj_labels if self.training or self.mode == 'predcls' else None)
             # vr = self.pair_rep(result.obj_fmap.detach(), rel_inds[:, 1:])
             vr = self.visual_rep(result.fmap.detach(), rois, rel_inds[:, 1:])
             result.rm_obj_dists, result.obj_preds, result.rel_dists = self.ggnn_rel_reason(
@@ -627,8 +628,10 @@ class KERN(nn.Module):
                 boxes_per_cls=result.boxes_all
             )
         if self.use_gsnn:
-            result.rm_obj_dists = self.gsnn(im_inds, result.obj_fmap, pair_features,
-                                                                           result.rm_obj_labels if self.training or self.mode == 'predcls' else None)
+            obj_confidences = result.rm_obj_dists
+            obj_confidences= torch.max(self.obj_score_cal(obj_confidences.type(torch.cuda.FloatTensor)), dim=1)[0]
+            result.rm_obj_dists = self.gsnn(im_inds, result.obj_fmap, obj_confidences,
+                                            result.rm_obj_labels if self.training or self.mode == 'predcls' else None)
             # vr = self.pair_rep(result.obj_fmap.detach(), rel_inds[:, 1:])
             vr = self.visual_rep(result.fmap.detach(), rois, rel_inds[:, 1:])
             result.rm_obj_dists, result.obj_preds, result.rel_dists = self.ggnn_rel_reason(
