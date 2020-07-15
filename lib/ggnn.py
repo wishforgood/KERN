@@ -36,20 +36,24 @@ class GSNN(nn.Module):
         self.fc_eq8_w = nn.Linear(hidden_dim, hidden_dim)
         self.fc_eq8_u = nn.Linear(hidden_dim, hidden_dim)
 
+        self.fc_eq6_w = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq6_u = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq7_w = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq7_u = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq8_w = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq8_u = nn.Linear(hidden_dim, hidden_dim)
+
         self.global_proj = nn.Linear(hidden_dim, hidden_dim)
 
         self.fc_output_obj = nn.Linear(2 * hidden_dim, output_dim)
         self.ReLU = nn.ReLU(True)
         self.fc_obj_cls = nn.Linear(output_dim, self.num_obj_cls)
-        self.pair_hidden_trans = nn.Linear(2 * hidden_dim, hidden_dim)
+        # self.pair_hidden_trans = nn.Linear(2 * hidden_dim, hidden_dim)
         self.subject_trans = nn.Linear(hidden_dim, hidden_dim)
         self.object_trans = nn.Linear(hidden_dim, hidden_dim)
-        self.object_trans = nn.Linear(hidden_dim, hidden_dim)
-        self.edge_att_trans = nn.Linear(hidden_dim, 1)
+        # self.edge_att_trans = nn.Linear(hidden_dim, 1)
 
-    def forward(self, input_ggnn, pair_features):
-        # print(input_ggnn)
-        # print(pair_features)
+    def forward(self, input_ggnn, node_confidence):
         # propogation process
         num_object = input_ggnn.size()[0]
 
@@ -61,31 +65,28 @@ class GSNN(nn.Module):
 
         global_feature = self.global_proj(torch.mean(hidden, 0))
 
-        source_hidden = hidden
-        for i in range(num_object):
-            for j in range(num_object):
-                if i != j:
-                    self.matrix[i,j] = self.edge_att_trans(self.subject_trans(source_hidden[i]) * self.object_trans(source_hidden[j]) * self.pair_hidden_trans(torch.cat([source_hidden[i], source_hidden[j]], 0)))
         for t in range(self.time_step_num):
 
-            # eq(2)
-            # here we use some matrix operation skills
+            # for i in range(num_object):
+            #     for j in range(num_object):
+            #         if i != j:
+            #             self.matrix[i, j] = self.edge_att_trans(
+            #                 self.subject_trans(hidden[i]) * self.object_trans(hidden[j]) * self.pair_hidden_trans(
+            #                     torch.cat([hidden[i], hidden[j]], 0)))
+
+            self.matrix = self.subject_trans(hidden) @ torch.transpose(self.object_trans(hidden), 0, 1)
+
             av = torch.cat([torch.cat([self.matrix @ hidden], 0), global_feature.repeat(self.matrix.size(0), 1)], 1)
 
-            # eq(3)
-            # hidden = hidden.view(num_object*self.num_obj_cls, -1)
             zv = torch.sigmoid(self.fc_eq3_w(av) + self.fc_eq3_u(hidden))
 
-            # eq(4)
             rv = torch.sigmoid(self.fc_eq4_w(av) + self.fc_eq3_u(hidden))
 
-            # eq(5)
             hv = torch.tanh(self.fc_eq5_w(av) + self.fc_eq5_u(rv * hidden))
 
             hidden = (1 - zv) * hidden + zv * hv
-            # hidden = hidden.view(num_object, self.num_obj_cls, -1)
 
-            v_bar = torch.mean(hidden, 0)
+            v_bar = node_confidence @ hidden
 
             zu = torch.sigmoid(self.fc_eq6_w(v_bar) + self.fc_eq6_u(global_feature))
 
@@ -458,3 +459,4 @@ class GGNNObj(nn.Module):
         output = self.ReLU(output)
         obj_dists = self.fc_obj_cls(output.view(-1, self.num_obj_cls * self.output_dim))
         return obj_dists
+
