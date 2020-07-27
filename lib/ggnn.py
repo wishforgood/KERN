@@ -51,7 +51,7 @@ class GSNN(nn.Module):
         # self.pair_hidden_trans = nn.Linear(2 * hidden_dim, hidden_dim)
         self.subject_trans = nn.Linear(hidden_dim, hidden_dim)
         self.object_trans = nn.Linear(hidden_dim, hidden_dim)
-        # self.edge_att_trans = nn.Linear(hidden_dim, 1)
+        self.edge_att_trans = nn.Linear(hidden_dim, 1)
 
     def forward(self, input_ggnn, node_confidence):
         # propogation process
@@ -61,7 +61,7 @@ class GSNN(nn.Module):
 
         matrix_np = np.ones((num_object, num_object)).astype(np.float32) / num_object
 
-        self.matrix = Variable(torch.from_numpy(matrix_np), requires_grad=False).cuda()
+        # self.matrix = Variable(torch.from_numpy(matrix_np), requires_grad=False).cuda()
 
         global_feature = self.global_proj(torch.mean(hidden, 0))
 
@@ -74,7 +74,9 @@ class GSNN(nn.Module):
             #                 self.subject_trans(hidden[i]) * self.object_trans(hidden[j]) * self.pair_hidden_trans(
             #                     torch.cat([hidden[i], hidden[j]], 0)))
 
-            self.matrix = self.ReLU(self.edge_att_trans(self.subject_trans(hidden) @ torch.transpose(self.object_trans(hidden), 0, 1)))
+            self.matrix = self.ReLU(self.edge_att_trans(torch.repeat_interleave(self.subject_trans(hidden), num_object, dim=0) * self.object_trans(hidden).repeat(num_object)))
+
+            self.matrix = self.matrix.reshape(num_object, num_object)
 
             av = torch.cat([torch.cat([self.matrix @ hidden], 0), global_feature.repeat(self.matrix.size(0), 1)], 1)
 
