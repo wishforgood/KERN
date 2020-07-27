@@ -6,6 +6,12 @@ import torch.nn as nn
 from torch.autograd import Variable
 import numpy as np
 
+def torch_tile(target_tensor, dim, n):
+    """Tile n times along the dim axis"""
+    if dim == 0:
+        return target_tensor.unsqueeze(0).transpose(0,1).repeat(1,n,1).view(-1,target_tensor.shape[1])
+    else:
+        return target_tensor.unsqueeze(0).transpose(0,1).repeat(1,1,n).view(target_tensor.shape[0], -1)
 
 class GSNN(nn.Module):
     def __init__(self, num_obj_cls=151, num_rel_cls=51, time_step_num=3, hidden_dim=512, output_dim=512):
@@ -74,7 +80,7 @@ class GSNN(nn.Module):
             #                 self.subject_trans(hidden[i]) * self.object_trans(hidden[j]) * self.pair_hidden_trans(
             #                     torch.cat([hidden[i], hidden[j]], 0)))
 
-            self.matrix = self.ReLU(self.edge_att_trans(torch.repeat_interleave(self.subject_trans(hidden), num_object, dim=0) * self.object_trans(hidden).repeat(num_object)))
+            self.matrix = self.ReLU(self.edge_att_trans(torch_tile(self.subject_trans(hidden), 0, num_object) * self.object_trans(hidden).repeat(num_object, 1)))
 
             self.matrix = self.matrix.reshape(num_object, num_object)
 
