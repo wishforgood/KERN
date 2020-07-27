@@ -74,7 +74,7 @@ class GSNN(nn.Module):
             #                 self.subject_trans(hidden[i]) * self.object_trans(hidden[j]) * self.pair_hidden_trans(
             #                     torch.cat([hidden[i], hidden[j]], 0)))
 
-            self.matrix = self.subject_trans(hidden) @ torch.transpose(self.object_trans(hidden), 0, 1)
+            self.matrix = self.ReLU(self.edge_att_trans(self.subject_trans(hidden) @ torch.transpose(self.object_trans(hidden), 0, 1)))
 
             av = torch.cat([torch.cat([self.matrix @ hidden], 0), global_feature.repeat(self.matrix.size(0), 1)], 1)
 
