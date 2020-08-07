@@ -47,7 +47,7 @@ class GSNNReason(nn.Module):
             for p in self.obj_proj.parameters():
                 p.requires_grad = False
 
-    def forward(self, im_inds, obj_fmaps, node_confidence, obj_labels):
+    def forward(self, im_inds, obj_fmaps, node_confidence, pair_features, obj_labels):
         """
         Reason object classes using knowledge of object cooccurrence
         """
@@ -67,7 +67,8 @@ class GSNNReason(nn.Module):
             obj_cum_add = np.cumsum([0] + lengths)
             pair_cum_add = np.cumsum([0] + pair_lengths)
             obj_feature_dists = list(zip(*[self.global_only_gnn(input_ggnn[obj_cum_add[i]: obj_cum_add[i + 1]],
-                                                                node_confidence[obj_cum_add[i]: obj_cum_add[i + 1]]) for
+                                                                node_confidence[obj_cum_add[i]: obj_cum_add[i + 1]],
+                                                                pair_features[pair_cum_add[i]: pair_cum_add[i + 1]]) for
                                            i
                                            in
                                            range(len(lengths))]))
@@ -574,10 +575,10 @@ class KERN(nn.Module):
                                                 gt_boxes.data, gt_classes.data, gt_rels.data,
                                                 image_offset, filter_non_overlap=True,
                                                 num_sample_per_gt=1)
-        # full_rel_labels = full_rel_assignments(im_inds.data, boxes.data, gt_classes.data)
+        full_rel_labels = full_rel_assignments(im_inds.data, boxes.data, gt_classes.data)
         img_obj_num = full_rel_num(im_inds.data, boxes.data, gt_classes.data)
         rel_inds = self.get_rel_inds(result.rel_labels, im_inds, boxes)
-        # full_rel_inds = self.get_rel_inds(full_rel_labels, im_inds, boxes)
+        full_rel_inds = self.get_rel_inds(full_rel_labels, im_inds, boxes)
         rois = torch.cat((im_inds[:, None].float(), boxes), 1)
 
         result.obj_fmap = self.obj_feature_map(result.fmap.detach(), rois)
@@ -589,22 +590,22 @@ class KERN(nn.Module):
                                                                or self.mode == 'predcls' else None)
         vr = self.visual_rep(result.fmap.detach(), rois, rel_inds[:, 1:])
         pair_features = []
-        # for img_ind in range(len(img_obj_num)):
-        #     start_ind = 0
-        #     end_ind = img_obj_num[img_ind] - 1
-        #     for obj_ind in range(img_obj_num[img_ind]):
-        #         pair_feature = self.pair_feature_trans(self.visual_rep(result.fmap.detach(), rois,
-        #                                                                full_rel_inds[start_ind:end_ind, 1:]))
-        #         pair_features.append(pair_feature)
-        #         start_ind += img_obj_num[img_ind] - 1
-        #         end_ind += img_obj_num[img_ind] - 1
-        # for obj in gc.get_objects():
-        #     try:
-        #         if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-        #             print(type(obj), obj.size())
-        #     except:
-        #         pass
-        # pair_features = torch.cat(pair_features)
+        for img_ind in range(len(img_obj_num)):
+            start_ind = 0
+            end_ind = img_obj_num[img_ind] - 1
+            for obj_ind in range(img_obj_num[img_ind]):
+                pair_feature = self.pair_feature_trans(self.visual_rep(result.fmap.detach(), rois,
+                                                                       full_rel_inds[start_ind:end_ind, 1:]))
+                pair_features.append(pair_feature)
+                start_ind += img_obj_num[img_ind] - 1
+                end_ind += img_obj_num[img_ind] - 1
+        for obj in gc.get_objects():
+            try:
+                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+                    print(type(obj), obj.size())
+            except:
+                pass
+        pair_features = torch.cat(pair_features)
         if self.use_ggnn_rel:
             result.rm_obj_dists, result.obj_preds, result.rel_dists = self.ggnn_rel_reason(
                 obj_fmaps=result.obj_fmap,
@@ -629,8 +630,8 @@ class KERN(nn.Module):
             )
         if self.use_gsnn:
             obj_confidences = result.rm_obj_dists
-            obj_confidences= torch.max(self.obj_score_cal(obj_confidences.type(torch.cuda.FloatTensor)), dim=1)[0]
-            result.rm_obj_dists = self.gsnn(im_inds, result.obj_fmap, obj_confidences,
+            obj_confidences = torch.max(self.obj_score_cal(obj_confidences.type(torch.cuda.FloatTensor)), dim=1)[0]
+            result.rm_obj_dists = self.gsnn(im_inds, result.obj_fmap, obj_confidences, pair_features,
                                             result.rm_obj_labels if self.training or self.mode == 'predcls' else None)
             # vr = self.pair_rep(result.obj_fmap.detach(), rel_inds[:, 1:])
             vr = self.visual_rep(result.fmap.detach(), rois, rel_inds[:, 1:])
