@@ -42,30 +42,30 @@ class GSNN(nn.Module):
         self.fc_eq8_w = nn.Linear(hidden_dim, hidden_dim)
         self.fc_eq8_u = nn.Linear(hidden_dim, hidden_dim)
 
-        self.fc_eq6_w = nn.Linear(hidden_dim, hidden_dim)
-        self.fc_eq6_u = nn.Linear(hidden_dim, hidden_dim)
-        self.fc_eq7_w = nn.Linear(hidden_dim, hidden_dim)
-        self.fc_eq7_u = nn.Linear(hidden_dim, hidden_dim)
-        self.fc_eq8_w = nn.Linear(hidden_dim, hidden_dim)
-        self.fc_eq8_u = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq9_w = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq9_u = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq10_w = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq10_u = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq11_w = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_eq11_u = nn.Linear(hidden_dim, hidden_dim)
 
         self.global_proj = nn.Linear(hidden_dim, hidden_dim)
 
         self.fc_output_obj = nn.Linear(2 * hidden_dim, output_dim)
         self.ReLU = nn.ReLU(True)
         self.fc_obj_cls = nn.Linear(output_dim, self.num_obj_cls)
-        # self.pair_hidden_trans = nn.Linear(2 * hidden_dim, hidden_dim)
+        self.pair_hidden_trans = nn.Linear(2 * hidden_dim, hidden_dim)
         self.subject_trans = nn.Linear(hidden_dim, hidden_dim)
         self.object_trans = nn.Linear(hidden_dim, hidden_dim)
         self.edge_att_trans = nn.Linear(hidden_dim, 1)
 
-    def forward(self, input_ggnn, node_confidence):
+    def forward(self, input_ggnn, node_confidence, pair_features):
         # propogation process
         num_object = input_ggnn.size()[0]
 
         hidden = input_ggnn
 
-        matrix_np = np.ones((num_object, num_object)).astype(np.float32) / num_object
+        # matrix_np = np.ones((num_object, num_object)).astype(np.float32) / num_object
 
         # self.matrix = Variable(torch.from_numpy(matrix_np), requires_grad=False).cuda()
 
@@ -79,6 +79,16 @@ class GSNN(nn.Module):
             #             self.matrix[i, j] = self.edge_att_trans(
             #                 self.subject_trans(hidden[i]) * self.object_trans(hidden[j]) * self.pair_hidden_trans(
             #                     torch.cat([hidden[i], hidden[j]], 0)))
+            ae = self.pair_hidden_trans(torch.cat((torch_tile(self.subject_trans(hidden), 0, num_object) * self.object_trans(hidden).repeat(num_object, 1)), 1))
+            print(ae)
+
+            ze = torch.sigmoid(self.fc_eq3_w(ae) + self.fc_eq3_u(pair_features))
+
+            re = torch.sigmoid(self.fc_eq4_w(ae) + self.fc_eq3_u(pair_features))
+
+            he = torch.tanh(self.fc_eq5_w(ae) + self.fc_eq5_u(re * pair_features))
+
+            pair_features = (1 - ze) * hidden + ze * he
 
             self.matrix = self.ReLU(self.edge_att_trans(torch_tile(self.subject_trans(hidden), 0, num_object) * self.object_trans(hidden).repeat(num_object, 1)))
 
