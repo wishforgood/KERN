@@ -63,7 +63,7 @@ class GSNNReason(nn.Module):
                 lengths.append(e - s)
             for i, s, e in enumerate_by_image(im_inds.data):
                 l = e - s
-                pair_lengths.append(l * (l - 1))
+                pair_lengths.append(l * l)
             obj_cum_add = np.cumsum([0] + lengths)
             pair_cum_add = np.cumsum([0] + pair_lengths)
             obj_feature_dists = list(zip(*[self.global_only_gnn(input_ggnn[obj_cum_add[i]: obj_cum_add[i + 1]],
@@ -460,6 +460,7 @@ class KERN(nn.Module):
             #     for p in self.roi_fmap.parameters():
             #         p.requires_grad = False
             self.obj_score_cal = nn.Softmax(dim=1)
+            self.pair_feature_trans = nn.Linear(self.obj_dim, ggnn_obj_hidden_dim)
             self.gsnn = GSNNReason(mode=self.mode,
                                    num_obj_cls=len(self.classes),
                                    obj_dim=self.obj_dim,
@@ -515,7 +516,23 @@ class KERN(nn.Module):
             if self.require_overlap:
                 rel_cands = rel_cands & (bbox_overlaps(box_priors.data,
                                                        box_priors.data) > 0)
-
+                # if there are fewer then 100 things then we might as well add some?
+                amt_to_add = 100 - rel_cands.long().sum()
+            rel_cands = rel_cands.nonzero()
+            if rel_cands.dim() == 0:
+                rel_cands = im_inds.data.new(1, 2).fill_(0)
+            rel_inds = torch.cat((im_inds.data[rel_cands[:, 0]][:, None], rel_cands), 1)
+        return rel_inds
+    
+    def get_full_rel_inds(self, rel_labels, im_inds, box_priors):
+        # Get the relationship candidates
+        if self.training:
+            rel_inds = rel_labels[:, :3].data.clone()
+        else:
+            rel_cands = im_inds.data[:, None] == im_inds.data[None]
+            if self.require_overlap:
+                rel_cands = rel_cands & (bbox_overlaps(box_priors.data,
+                                                       box_priors.data) > 0)
                 # if there are fewer then 100 things then we might as well add some?
                 amt_to_add = 100 - rel_cands.long().sum()
 
@@ -523,9 +540,7 @@ class KERN(nn.Module):
 
             if rel_cands.dim() == 0:
                 rel_cands = im_inds.data.new(1, 2).fill_(0)
-
             rel_inds = torch.cat((im_inds.data[rel_cands[:, 0]][:, None], rel_cands), 1)
-
         return rel_inds
 
     def obj_feature_map(self, features, rois):
@@ -578,7 +593,7 @@ class KERN(nn.Module):
         full_rel_labels = full_rel_assignments(im_inds.data, boxes.data, gt_classes.data)
         img_obj_num = full_rel_num(im_inds.data, boxes.data, gt_classes.data)
         rel_inds = self.get_rel_inds(result.rel_labels, im_inds, boxes)
-        full_rel_inds = self.get_rel_inds(full_rel_labels, im_inds, boxes)
+        full_rel_inds = self.get_full_rel_inds(full_rel_labels, im_inds, boxes)
         rois = torch.cat((im_inds[:, None].float(), boxes), 1)
 
         result.obj_fmap = self.obj_feature_map(result.fmap.detach(), rois)
@@ -592,19 +607,19 @@ class KERN(nn.Module):
         pair_features = []
         for img_ind in range(len(img_obj_num)):
             start_ind = 0
-            end_ind = img_obj_num[img_ind] - 1
+            end_ind = img_obj_num[img_ind]
             for obj_ind in range(img_obj_num[img_ind]):
                 pair_feature = self.pair_feature_trans(self.visual_rep(result.fmap.detach(), rois,
                                                                        full_rel_inds[start_ind:end_ind, 1:]))
                 pair_features.append(pair_feature)
-                start_ind += img_obj_num[img_ind] - 1
-                end_ind += img_obj_num[img_ind] - 1
-        for obj in gc.get_objects():
-            try:
-                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                    print(type(obj), obj.size())
-            except:
-                pass
+                start_ind += img_obj_num[img_ind]
+                end_ind += img_obj_num[img_ind]
+        # for obj in gc.get_objects():
+        #     try:
+        #         if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+        #             print(type(obj), obj.size())
+        #     except:
+        #         pass
         pair_features = torch.cat(pair_features)
         if self.use_ggnn_rel:
             result.rm_obj_dists, result.obj_preds, result.rel_dists = self.ggnn_rel_reason(
