@@ -60,6 +60,8 @@ class GSNN(nn.Module):
         self.edge_att_trans = nn.Linear(hidden_dim, 1)
 
     def forward(self, input_ggnn, node_confidence, pair_features):
+
+        pair_features = pair_features.detach()
         # propogation process
         num_object = input_ggnn.size()[0]
 
@@ -79,26 +81,26 @@ class GSNN(nn.Module):
             #             self.matrix[i, j] = self.edge_att_trans(
             #                 self.subject_trans(hidden[i]) * self.object_trans(hidden[j]) * self.pair_hidden_trans(
             #                     torch.cat([hidden[i], hidden[j]], 0)))
-            ae = self.pair_hidden_trans(torch.cat((torch_tile(self.subject_trans(hidden), 0, num_object) * self.object_trans(hidden).repeat(num_object, 1)), 1))
-            print(ae)
+            ae = self.pair_hidden_trans(torch.cat((torch_tile(self.subject_trans(hidden), 0, num_object), self.object_trans(hidden).repeat(num_object, 1)), 1))
 
-            ze = torch.sigmoid(self.fc_eq3_w(ae) + self.fc_eq3_u(pair_features))
+            ze = torch.sigmoid(self.fc_eq9_w(ae) + self.fc_eq9_u(pair_features))
 
-            re = torch.sigmoid(self.fc_eq4_w(ae) + self.fc_eq3_u(pair_features))
+            re = torch.sigmoid(self.fc_eq10_w(ae) + self.fc_eq10_u(pair_features))
 
-            he = torch.tanh(self.fc_eq5_w(ae) + self.fc_eq5_u(re * pair_features))
+            he = torch.tanh(self.fc_eq11_w(ae) + self.fc_eq11_u(re * pair_features))
 
-            pair_features = (1 - ze) * hidden + ze * he
+            pair_features = (1 - ze) * pair_features + ze * he
 
-            self.matrix = self.ReLU(self.edge_att_trans(torch_tile(self.subject_trans(hidden), 0, num_object) * self.object_trans(hidden).repeat(num_object, 1)))
-
-            self.matrix = self.matrix.reshape(num_object, num_object)
+            # self.matrix = self.edge_att_trans(torch_tile(self.subject_trans(hidden), 0, num_object) * self.object_trans(hidden).repeat(num_object, 1))
+            self.matrix = torch_tile(self.subject_trans(hidden), 0, num_object) * self.object_trans(hidden).repeat(num_object, 1)
+            self.matrix = self.edge_att_trans(pair_features * self.matrix)
+            self.matrix = self.matrix.view(-1, num_object)
 
             av = torch.cat([torch.cat([self.matrix @ hidden], 0), global_feature.repeat(self.matrix.size(0), 1)], 1)
 
             zv = torch.sigmoid(self.fc_eq3_w(av) + self.fc_eq3_u(hidden))
 
-            rv = torch.sigmoid(self.fc_eq4_w(av) + self.fc_eq3_u(hidden))
+            rv = torch.sigmoid(self.fc_eq4_w(av) + self.fc_eq4_u(hidden))
 
             hv = torch.tanh(self.fc_eq5_w(av) + self.fc_eq5_u(rv * hidden))
 
@@ -108,7 +110,7 @@ class GSNN(nn.Module):
 
             zu = torch.sigmoid(self.fc_eq6_w(v_bar) + self.fc_eq6_u(global_feature))
 
-            ru = torch.sigmoid(self.fc_eq7_w(v_bar) + self.fc_eq6_u(global_feature))
+            ru = torch.sigmoid(self.fc_eq7_w(v_bar) + self.fc_eq7_u(global_feature))
 
             hu = torch.tanh(self.fc_eq8_w(v_bar) + self.fc_eq8_u(ru * global_feature))
 
