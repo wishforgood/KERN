@@ -15,3 +15,4 @@ import numpy as np
 # print(matrix_e2n_s)
 # print(source_nodes.unsqueeze(0))
 # print(matrix_e2n_s.scatter_(0, source_nodes.unsqueeze(0), 1))
+https://epubs.siam.org/doi/abs/10.1137/040605503?journalCode=sjope8
