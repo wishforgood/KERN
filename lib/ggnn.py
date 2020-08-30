@@ -92,9 +92,7 @@ class GSNN(nn.Module):
             pair_features = (1 - ze) * pair_features + ze * he
 
             # self.matrix = self.edge_att_trans(torch_tile(self.subject_trans(hidden), 0, num_object) * self.object_trans(hidden).repeat(num_object, 1))
-            self.matrix = torch_tile(self.subject_trans(hidden), 0, num_object) * self.object_trans(hidden).repeat(num_object, 1)
-            self.matrix = self.edge_att_trans(pair_features * self.matrix)
-            self.matrix = self.matrix.view(-1, num_object)
+            self.matrix = self.edge_att_trans(pair_features * torch_tile(self.subject_trans(hidden), 0, num_object) * self.object_trans(hidden).repeat(num_object, 1)).view(-1, num_object)
 
             av = torch.cat([torch.cat([self.matrix @ hidden], 0), global_feature.repeat(self.matrix.size(0), 1)], 1)
 
@@ -404,7 +402,7 @@ class GGNNRel(nn.Module):
             # eq(3)
             zv = torch.sigmoid(self.fc_eq3_w(av) + self.fc_eq3_u(flatten_hidden))
             # eq(4)
-            rv = torch.sigmoid(self.fc_eq4_w(av) + self.fc_eq3_u(flatten_hidden))
+            rv = torch.sigmoid(self.fc_eq4_w(av) + self.fc_eq4_u(flatten_hidden))
             # eq(5)
             hv = torch.tanh(self.fc_eq5_w(av) + self.fc_eq5_u(rv * flatten_hidden))
             flatten_hidden = (1 - zv) * flatten_hidden + zv * hv
