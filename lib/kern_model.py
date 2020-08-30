@@ -530,14 +530,7 @@ class KERN(nn.Module):
             rel_inds = rel_labels[:, :3].data.clone()
         else:
             rel_cands = im_inds.data[:, None] == im_inds.data[None]
-            if self.require_overlap:
-                rel_cands = rel_cands & (bbox_overlaps(box_priors.data,
-                                                       box_priors.data) > 0)
-                # if there are fewer then 100 things then we might as well add some?
-                amt_to_add = 100 - rel_cands.long().sum()
-
             rel_cands = rel_cands.nonzero()
-
             if rel_cands.dim() == 0:
                 rel_cands = im_inds.data.new(1, 2).fill_(0)
             rel_inds = torch.cat((im_inds.data[rel_cands[:, 0]][:, None], rel_cands), 1)
@@ -609,8 +602,7 @@ class KERN(nn.Module):
             start_ind = 0
             end_ind = img_obj_num[img_ind]
             for obj_ind in range(img_obj_num[img_ind]):
-                pair_feature = self.pair_feature_trans(self.visual_rep(result.fmap.detach(), rois,
-                                                                       full_rel_inds[start_ind:end_ind, 1:]))
+                pair_feature = self.pair_feature_trans(self.visual_rep(result.fmap.detach(), rois, full_rel_inds[start_ind:end_ind, 1:]))
                 pair_features.append(pair_feature)
                 start_ind += img_obj_num[img_ind]
                 end_ind += img_obj_num[img_ind]
