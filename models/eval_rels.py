@@ -35,7 +35,7 @@ detector = KERN(classes=train.ind_to_classes, rel_classes=train.ind_to_predicate
                 use_obj_knowledge=conf.use_obj_knowledge, obj_knowledge=conf.obj_knowledge,
                 use_ggnn_rel=conf.use_ggnn_rel, ggnn_rel_time_step_num=conf.ggnn_rel_time_step_num,
                 ggnn_rel_hidden_dim=conf.ggnn_rel_hidden_dim, ggnn_rel_output_dim=conf.ggnn_rel_output_dim,
-                use_rel_knowledge=conf.use_rel_knowledge, rel_knowledge=conf.rel_knowledge)
+                use_rel_knowledge=conf.use_rel_knowledge, rel_knowledge=conf.rel_knowledge, use_global_only_gnn=conf.use_global_only_gnn, use_gsnn=conf.use_gsnn)
 
 
 detector.cuda()
@@ -54,7 +54,8 @@ def val_batch(batch_num, b, evaluator, evaluator_multiple_preds, evaluator_list,
     det_res = detector[b]
     if conf.num_gpus == 1:
         det_res = [det_res]
-
+    batch_cls = []
+    batch_reg = []
     for i, (boxes_i, objs_i, obj_scores_i, rels_i, pred_scores_i) in enumerate(det_res):
         gt_entry = {
             'gt_classes': val.gt_classes[batch_num + i].copy(),
@@ -73,8 +74,11 @@ def val_batch(batch_num, b, evaluator, evaluator_multiple_preds, evaluator_list,
         }
         all_pred_entries.append(pred_entry)
 
-        eval_entry(conf.mode, gt_entry, pred_entry, evaluator, evaluator_multiple_preds, 
+        rt_cls, rt_reg = eval_entry(conf.mode, gt_entry, pred_entry, evaluator, evaluator_multiple_preds,
                    evaluator_list, evaluator_multiple_preds_list)
+        batch_cls.append(rt_cls)
+        batch_reg.append(rt_reg)
+    return batch_cls, batch_reg
 
 
 evaluator = BasicSceneGraphEvaluator.all_modes()
@@ -109,8 +113,12 @@ if conf.cache is not None and os.path.exists(conf.cache):
 
 else:
     detector.eval()
+    rt_clses = []
+    rt_regs = []
     for val_b, batch in enumerate(tqdm(val_loader)):
-        val_batch(conf.num_gpus*val_b, batch, evaluator, evaluator_multiple_preds, evaluator_list, evaluator_multiple_preds_list)
+        rt_cls, rt_reg = val_batch(conf.num_gpus*val_b, batch, evaluator, evaluator_multiple_preds, evaluator_list, evaluator_multiple_preds_list)
+        rt_clses = [*rt_clses, *rt_cls]
+        rt_regs = [*rt_regs, *rt_reg]
 
     recall = evaluator[conf.mode].print_stats()
     recall_mp = evaluator_multiple_preds[conf.mode].print_stats()
@@ -120,5 +128,5 @@ else:
 
     if conf.cache is not None:
         with open(conf.cache,'wb') as f:
-            pkl.dump(all_pred_entries, f)
+            pkl.dump([rt_clses, rt_regs], f)
 
